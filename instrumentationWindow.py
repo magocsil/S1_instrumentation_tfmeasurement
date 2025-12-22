@@ -18,13 +18,15 @@ from fractions import Fraction
 device_list = list()
 is_running = False
 next_task = int()
+isNot33120A = False
 
 def ListResources():
 	global device_list
 	global combobox_fg
 	global combobox_scope
+	
 	device_list = sorted(rm.list_resources(), reverse=True) # regarder le nom de la ressource d'intérêt et le copier ci-dessous
-
+	
 	combobox_fg['values'] = device_list
 	combobox_scope['values'] = device_list
 	if (combobox_fg.get() is None) or (combobox_fg.get() == ""):
@@ -334,22 +336,46 @@ def FunctionFrequencyChange(f, i, fg, scope, channel_in, channel_out):
 	global next_task
 	freq_in_list.append(f)
 	
+	print("Getting input voltage...")
 	scope.write(f'MEAS:ITEM? VPP,CHAN{channel_in}')
+	print("Input voltage ready")
 	main_window.after(100, QueryVoltageIn(scope))
+	print("Input voltage arrived")
+	print("Getting output voltage...")
 	scope.write(f'MEAS:ITEM? VPP,CHAN{channel_out}')
+	print("Output voltage ready")
 	main_window.after(100, QueryVoltageOut(scope))
-	attenuation_list.append(FunctionCalcAttenuation(voltage_out_list[-1]/voltage_in_list[-1]))
+	print("Output voltage arrived")
+	attenuation = 1
+	try:
+		attenuation = voltage_out_list[-1] / voltage_in_list[-1]
+	except:
+		if len(attenuation_list) > 0:
+			attenuation = attenuation_list[-1]
+		else:
+			attenuation = 0
+	print(f"Attenuation: {attenuation}")
+	attenuation_list.append(FunctionCalcAttenuation(attenuation))
+	print("Getting phase...")
 	scope.write('MEAS:ITEM? RPH')
+	print("Phase ready")
 	main_window.after(100, QueryPhaseDifference(scope))
+	print("Phase arrived")
 	
 	FunctionDisplay()
 	
 	i = i + 1
 	if (i in range(0, len(freq_list))) and is_running:
-		fg.write(f'FREQ {f}')
+		fg.write(f'FREQ {freq_list[i]}')
 		UpdateScope(scope, voltage_in_list[-1], voltage_out_list[-1], channel_in, channel_out, f)
 		next_task = main_window.after(1000, FunctionFrequencyChange, freq_list[i], i, fg, scope, channel_in, channel_out)
 	else:
+		if isNot33120A:
+			fg.write('OUTP OFF')
+		else:
+			fg.write('DISP:TEXT:CLE')
+			fg.write('SYST:LOC')
+		
 		fg.close()
 		scope.close()
 		FunctionFinalizePlotLimits()
@@ -428,13 +454,24 @@ def FunctionDemo(f, i):
 
 
 def QueryVoltageIn(scope):
-	voltage_in_list.append(float(scope.read()))
+	print("before")
+	vin = scope.read()
+	print(f"Voltage read: {vin}")
+	voltage_in_list.append(float(vin))
+	print("after")
 
 def QueryVoltageOut(scope):
 	voltage_out_list.append(float(scope.read()))
 
 def QueryPhaseDifference(scope):
-	phase_difference_list.append(FunctionCalcPhaseDifference(float(scope.read())))
+	phase = float(scope.read())
+	if phase > 360 or phase < -360:
+		if len(phase_difference_list) > 0:
+			phase = phase_difference_list[-1]
+		else:
+			phase = 0
+	
+	phase_difference_list.append(FunctionCalcPhaseDifference(float(phase)))
 
 def FunctionFrequencySet(integers, points):
 	digits = 2
@@ -451,12 +488,32 @@ def FunctionFrequencySet(integers, points):
 	return result
 
 def SetupFG(fg, voltage_in):
-	fg.write(f'VOLT {voltage_in}')
+	fg.write('*IDN?')
+	if "33120" in fg.read():
+		isNot33120A = False
+	else:
+		isNot33120A = True
+	if isNot33120A:
+		fg.write('FUNC SIN')
+	else:
+		fg.write('FUNC:SHAP SIN')
 	fg.write(f'FREQ {limits_frequency[0]}')
+	fg.write('VOLT:UNIT VPP')
+	if isNot33120A:
+		fg.write(f'VOLT {voltage_in/2}')
+	else:
+		fg.write(f'VOLT {voltage_in}')
+	fg.write('VOLT:OFFS 0')
+	fg.write('OUTP:LOAD INF')
 	subplot_attenuation.set_xlim(limits_frequency)
 	subplot_phase.set_xlim(limits_frequency)
 	plot_canvas.draw()
-	#fg.write('OUTP ON')
+	if isNot33120A:
+		fg.write('OUTP ON')
+	else:
+		fg.write("SYST:REM")
+		fg.write("DISP:TEXT 'MEASURING..'")
+	print("FG initialized")
 
 def SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq, bw_in, bw_out, avg):
 	scope.write('CLE')
@@ -490,7 +547,7 @@ def SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq, bw
 	scope.write(f'TRIG:EDG:SOUR CHAN{channel_in}')
 	scope.write('TRIG:EDG:SLOP POS')
 	scope.write('TRIG:EDG:LEV 0')
-	if int(float(avg)) == 0:
+	if int(float(avg)) == 1:
 		scope.write('ACQ:TYPE NORM')
 	else:
 		scope.write('ACQ:TYPE AVER')
@@ -506,20 +563,20 @@ def SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq, bw
 	scope.write(f'MEAS:ITEM FREQ,CHAN{channel_out}')
 	scope.write('MEAS:ITEM RPH')
 	UpdateScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq)
-	
+	print("SCOPE initialized")
+
 def UpdateScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq):
 	scope.write(f'TIM:MAIN:SCAL {1/freq/6}')
 	scope.write(f'CHAN{channel_in}:RANG {voltage_in * 2}')
 	scope.write(f'CHAN{channel_out}:RANG {voltage_out * 2}')
+	print("SCOPE updated")
 
 def FunctionDisplayScale(val):
 	global label_average2
 	label_text = ""
-	label_text = f"{2 ** int(float(val))} sample"
+	label_text = f"{2 ** int(float(val))} samples"
 	if int(float(val)) == 0:
-		label_text = label_text + " (no averaging)"
-	else:
-		label_text = label_text + "s"
+		label_text = "no averaging"
 	label_average2.config(text=label_text)
 
 def FunctionStop():
@@ -563,8 +620,16 @@ def FunctionUpdate():
 			nc_fg = False
 	
 	dict_unit_frequency = {"μHz" : 0.000001, "mHz" : 0.001, "Hz" : 1, "kHz" : 1000, "MHz" : 1000000, "GHz" : 1000000000}
-	limits_frequency[0] = float(entry_frequency_min.get()) * dict_unit_frequency[combobox_unit_frequency_min.get()]
-	limits_frequency[1] = float(entry_frequency_max.get()) * dict_unit_frequency[combobox_unit_frequency_max.get()]
+	setting_min = float(entry_frequency_min.get()) * dict_unit_frequency[combobox_unit_frequency_min.get()]
+	memory_min = setting_min
+	setting_max = float(entry_frequency_max.get()) * dict_unit_frequency[combobox_unit_frequency_max.get()]
+	memory_max = setting_max
+	if len(memory_list) < 0:
+		for i in range(int(len(memory_list) / 3)):
+			memory_min = min(memory_min, min(memory_list[i * 3]))
+			memory_max = max(memory_max, max(memory_list[i * 3]))
+	limits_frequency[0] = memory_min
+	limits_frequency[1] = memory_max
 	points = int(entry_points.get())
 	
 	dict_unit_voltage = {"μV" : 0.000001, "mV" : 0.001, "V" : 1, "kV" : 1000, "MV" : 1000000, "GV" : 1000000000}
@@ -645,7 +710,6 @@ def FunctionUpdate():
 		SetupFG(fg, voltage_in)
 		SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq_list[0], dict_bool_to_on_off[boolean_var_bw_in.get()], dict_bool_to_on_off[boolean_var_bw_out.get()], 2 ** int(float(scale_average.get())))
 		
-		fg.write(f'FREQ {freq_list[0]}')
 		next_task = main_window.after(20000, FunctionFrequencyChange, freq_list[0], 0, fg, scope, channel_in, channel_out)
 	#inst.write(f'FREQ {frequency}')
 	#print(myId)
@@ -693,11 +757,11 @@ combobox_scope = ttk.Combobox(frame_device, state="readonly", values=device_list
 
 ListResources()
 
-label_channel_in = Label(frame_device, text="Input signal channel on oscilloscope:", width=32, anchor="w")
+label_channel_in = Label(frame_device, text="Oscilloscope input channel:", width=32, anchor="w")
 combobox_channel_in = ttk.Combobox(frame_device, state="readonly", values=[1, 2, 3, 4])
 combobox_channel_in.config(width=1)
 combobox_channel_in.set(1)
-label_channel_out = Label(frame_device, text="Output signal channel on oscilloscope:", width=32, anchor="w")
+label_channel_out = Label(frame_device, text="Oscilloscope output channel:", width=32, anchor="w")
 combobox_channel_out = ttk.Combobox(frame_device, state="readonly", values=[1, 2, 3, 4])
 combobox_channel_out.config(width=1)
 combobox_channel_out.set(2)
@@ -709,33 +773,35 @@ boolean_var_bw_out.set(False)
 checkbutton_bw_out = Checkbutton(frame_device, variable=boolean_var_bw_out, text="Oscilloscope bandwidth limit (output)")
 int_var_average = IntVar()
 label_average1 = Label(frame_device, text="Taking average of")
-label_average2 = Label(frame_device, text="0 samples")
+label_average2 = Label(frame_device, text="0 samples", width=12)
 scale_average = ttk.Scale(frame_device, orient=HORIZONTAL, length=100, from_=0, to=10, variable=int_var_average, command=FunctionDisplayScale)
 scale_average.set(0)
 
-button_refresh = Button(frame_device, text="Refresh", width=10, command=ListResources())
+button_refresh = Button(frame_device, text="bruh", width=8, command=ListResources)
 
+frame_device.grid_rowconfigure((0, 10, 15, 17, 20, 30, 40, 50, 60), weight=1)
+frame_device.grid_columnconfigure((0, 10, 20, 25), weight=1)
 
-label_setup.grid(row=5, column=10, columnspan=30, pady=20)
+label_setup.grid(row=0, column=0, columnspan=30, pady=20, sticky=EW)
 
-label_fg.grid(row=10, column=10, columnspan=15)
-combobox_fg.grid(row=10, column=25, columnspan=15, padx=10)
+label_fg.grid(row=10, column=0, padx=20, sticky=E)
+combobox_fg.grid(row=10, column=10, columnspan=20, sticky=W)
 
-label_scope.grid(row=15, column=10, columnspan=15)
-combobox_scope.grid(row=15, column=25, columnspan=15, padx=10)
+label_scope.grid(row=15, column=0, padx=20, sticky=E)
+combobox_scope.grid(row=15, column=10, columnspan=20, sticky=W)
 
-checkbutton_bw_in.grid(row=40, column=10, columnspan=30)
-checkbutton_bw_out.grid(row=50, column=10, columnspan=30)
-label_average1.grid(row=60, column=10)
-scale_average.grid(row=60, column=20)
-label_average2.grid(row=60, column=30)
+checkbutton_bw_in.grid(row=40, column=0, columnspan=30, sticky=EW)
+checkbutton_bw_out.grid(row=50, column=0, columnspan=30, sticky=EW)
+label_average1.grid(row=60, column=0, padx=10, sticky=E)
+scale_average.grid(row=60, column=10, sticky=EW)
+label_average2.grid(row=60, column=20, columnspan=10, padx=10, sticky=W)
 
-button_refresh.grid(row=17, column=10, columnspan=10, pady=20)
+button_refresh.grid(row=17, column=0, pady=5, sticky=EW)
 
-label_channel_in.grid(row=20, column=10, columnspan=20)
-combobox_channel_in.grid(row=20, column=30, padx=10)
-label_channel_out.grid(row=30, column=10, columnspan=20)
-combobox_channel_out.grid(row=30, column=30, padx=10)
+label_channel_in.grid(row=20, column=0, columnspan=25, padx=10, sticky=E)
+combobox_channel_in.grid(row=20, column=25, sticky=W)
+label_channel_out.grid(row=30, column=0, columnspan=25, padx=10, sticky=E)
+combobox_channel_out.grid(row=30, column=25, sticky=W)
 
 
 button_update=Button(frame_measurement, text="Start", command=FunctionUpdate)
