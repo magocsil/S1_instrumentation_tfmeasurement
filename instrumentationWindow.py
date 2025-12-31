@@ -284,8 +284,8 @@ def FunctionDisplay():
 	try:
 		limits_gain[0] = min(gain_list[-1], limits_gain[0])
 		limits_gain[1] = max(gain_list[-1] + 0.2 + int(gain_in_decibels.get()), limits_gain[1])
-		limits_phase[0] = min(phase_difference_list[-1], limits_phase[0])
-		limits_phase[1] = max(phase_difference_list[-1], limits_phase[1])
+		limits_phase[0] = min(int(phase_difference_list[-1] / FunctionCalcPhaseDifference(90)) - FunctionCalcPhaseDifference(90), limits_phase[0])
+		limits_phase[1] = max(int(phase_difference_list[-1] / FunctionCalcPhaseDifference(90)) + FunctionCalcPhaseDifference(90), limits_phase[1])
 	
 	except:
 		pass
