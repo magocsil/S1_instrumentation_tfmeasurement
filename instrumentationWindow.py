@@ -1,6 +1,5 @@
 from tkinter import *
 import pyvisa as visa
-import time as tm
 import tkinter.messagebox
 import tkinter.ttk as ttk
 from tkinter.filedialog import asksaveasfilename
@@ -8,24 +7,55 @@ from tkinter.filedialog import askopenfilename
 import matplotlib as mpl
 mpl.rcParams["savefig.directory"] = ""
 mpl.rcParams["savefig.format"] = "png"
-mpl.use('TkAgg') # back-end TkAgg
+mpl.use('TkAgg')
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import sys
 import math
-from fractions import Fraction
+
+
+main_window = Tk()
+main_window.title("Transfer function measurement")
+main_window.resizable(False, False)
+
+visa.log_to_screen()
+rm = visa.ResourceManager('@py')
 
 device_list = list()
 is_running = False
 next_task = int()
 isNot33120A = False
+memory_list = list()
+freq_list = list()
+freq_in_list = list()
+voltage_in_list = list()
+voltage_out_list = list()
+phase_difference_list = list()
+gain_list = list()
+channel_in = ""
+channel_out = ""
+kmin = -1
+kmax = 1
+limits_frequency = [20, 20000]
+limits_gain = [0, 1.2]
+limits_phase = [-90, 90]
+steps_phase = 45
+ticks_phase = [-90, -45, 0, 45, 90]
+labels_phase = [f'{x}' for x in ticks_phase]
+boolean_var_gain_in_db = BooleanVar()
+boolean_var_gain_in_db.set(False)
+boolean_var_phase_in_radians = BooleanVar()
+boolean_var_phase_in_radians.set(False)
+measurement_unit_gain = ""
+measurement_unit_phase_difference = " [°]"
+csv_details = [("Comma-separated values (*.csv)","*.csv")]
 
 def ListResources():
 	global device_list
 	global combobox_fg
 	global combobox_scope
 	
-	device_list = sorted(rm.list_resources(), reverse=True) # regarder le nom de la ressource d'intérêt et le copier ci-dessous
+	device_list = sorted(rm.list_resources(), reverse=True)
 	
 	combobox_fg['values'] = device_list
 	combobox_scope['values'] = device_list
@@ -34,105 +64,61 @@ def ListResources():
 	if (combobox_scope.get() is None) or (combobox_scope.get() == ""):
 		combobox_scope.set(device_list[0])
 
-visa.log_to_screen()
-rm = visa.ResourceManager('@py')
-
-#Function Generator: u'USB0::1024::2500::DG1D172101869\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00::0::INSTR'
-#Scope: u'USB0::6833::1230::DS1ZA192611866::0::INSTR'
-
-#myId = inst.query('*IDN?')
-#print(myId)
-
-#inst.write("*IDN?")
-#tm.sleep(5)
-#print(inst.read())
-#inst.write("FREQ 1234")
-
-main_window=Tk()
-main_window.title("Transfer function measurement")
-main_window.resizable(False, False)
-#main_window.iconphoto(True, PhotoImage(file="./Pictures/Screenshots/Homega.png"))
-
-memory_list = list()
-freq_list = list()
-freq_in_list = list()
-voltage_in_list = list()
-voltage_out_list = list()
-phase_difference_list = list()
-attenuation_list = list()
-channel_in = ""
-channel_out = ""
-kmin = -1
-kmax = 1
-limits_frequency = [20, 20000]
-limits_attenuation = [0, 1.2]
-limits_phase = [-90, 90]
-steps_phase = 45
-ticks_phase = [-90, -45, 0, 45, 90]
-labels_phase = [f'{x}' for x in ticks_phase]
-boolean_var_attenuation_in_db = BooleanVar()
-boolean_var_attenuation_in_db.set(False)
-boolean_var_phase_in_radians = BooleanVar()
-boolean_var_phase_in_radians.set(False)
-measurement_unit_attenuation = ""
-measurement_unit_phase_difference = " [°]"
-csv_details = [("Comma-separated values (*.csv)","*.csv")]
-
-def FunctionAttenuationLimitsdB():
-	global limits_attenuation
-	global attenuation_list
-	minimal_attenuation = -10
-	maximal_attenuation = 0
-	if len(attenuation_list) > 0:
-		minimal_attenuation = min(attenuation_list)
-		maximal_attenuation = max(attenuation_list)
+def FunctionGainLimitsdB():
+	global limits_gain
+	global gain_list
+	minimal_gain = -10
+	maximal_gain = 0
+	if len(gain_list) > 0:
+		minimal_gain = min(gain_list)
+		maximal_gain = max(gain_list)
 	if len(memory_list) > 0:
 		for i in range(int(len(memory_list) / 3)):
-			minimal_attenuation = min(minimal_attenuation, min(memory_list[i * 3 + 1]))
-			maximal_attenuation = max(maximal_attenuation, max(memory_list[i * 3 + 1]))
+			minimal_gain = min(minimal_gain, min(memory_list[i * 3 + 1]))
+			maximal_gain = max(maximal_gain, max(memory_list[i * 3 + 1]))
 	try:
-		limits_attenuation = [minimal_attenuation, maximal_attenuation + 1.2]
+		limits_gain = [minimal_gain, maximal_gain + 1.2]
 	except:
-		limits_attenuation = [minimal_attenuation, maximal_attenuation + 1.2]
+		limits_gain = [minimal_gain, maximal_gain + 1.2]
 
-def FunctionAttenuationLimitsNodB():
-	global limits_attenuation
-	global attenuation_list
-	minimal_attenuation = 0
-	maximal_attenuation = 1
-	if len(attenuation_list) > 0:
-		minimal_attenuation = min(attenuation_list)
-		maximal_attenuation = max(attenuation_list)
+def FunctionGainLimitsNodB():
+	global limits_gain
+	global gain_list
+	minimal_gain = 0
+	maximal_gain = 1
+	if len(gain_list) > 0:
+		minimal_gain = min(gain_list)
+		maximal_gain = max(gain_list)
 	if len(memory_list) > 0:
 		for i in range(int(len(memory_list) / 3)):
-			minimal_attenuation = min(minimal_attenuation, min(memory_list[i * 3 + 1]))
-			maximal_attenuation = max(maximal_attenuation, max(memory_list[i * 3 + 1]))
+			minimal_gain = min(minimal_gain, min(memory_list[i * 3 + 1]))
+			maximal_gain = max(maximal_gain, max(memory_list[i * 3 + 1]))
 	try:
-		limits_attenuation = [0, max(1.2, maximal_attenuation + 0.2)]
+		limits_gain = [0, max(1.2, maximal_gain + 0.2)]
 	except:
-		limits_attenuation = [minimal_attenuation, maximal_attenuation + 0.2]
+		limits_gain = [minimal_gain, maximal_gain + 0.2]
 
-def FunctionUpdateAttenuation():
-	global measurement_unit_attenuation
-	global attenuation_list
-	if boolean_var_attenuation_in_db.get():
+def FunctionUpdateGain():
+	global measurement_unit_gain
+	global gain_list
+	if boolean_var_gain_in_db.get():
 		if len(memory_list) > 0:
 			for i in range(0, int(len(memory_list) / 3)):
 				temp = [20 * math.log(x, 10) for x in memory_list[i * 3 + 1]]
 				memory_list[i * 3 + 1] = temp
-		result = [20 * math.log(x, 10) for x in attenuation_list]
-		attenuation_list = result
-		measurement_unit_attenuation = " [dB]"
-		FunctionAttenuationLimitsdB()
+		result = [20 * math.log(x, 10) for x in gain_list]
+		gain_list = result
+		measurement_unit_gain = " [dB]"
+		FunctionGainLimitsdB()
 	else:
 		if len(memory_list) > 0:
 			for i in range(0, int(len(memory_list) / 3)):
 				temp = [10 ** (x / 20) for x in memory_list[i * 3 + 1]]
 				memory_list[i * 3 + 1] = temp
-		result = [10 ** (x / 20) for x in attenuation_list]
-		attenuation_list = result
-		measurement_unit_attenuation = ""
-		FunctionAttenuationLimitsNodB()
+		result = [10 ** (x / 20) for x in gain_list]
+		gain_list = result
+		measurement_unit_gain = ""
+		FunctionGainLimitsNodB()
 	FunctionDisplay()
 
 def FunctionPhaseLimitsRad():
@@ -223,10 +209,10 @@ def FunctionUpdatePhaseDifference():
 	FunctionDisplay()
 
 def FunctionFinalizePlotLimits():
-	if boolean_var_attenuation_in_db.get():
-		FunctionAttenuationLimitsdB()
+	if boolean_var_gain_in_db.get():
+		FunctionGainLimitsdB()
 	else:
-		FunctionAttenuationLimitsNodB()
+		FunctionGainLimitsNodB()
 	
 	global kmin
 	global kmax
@@ -240,13 +226,9 @@ def FunctionFinalizePlotLimits():
 	
 	if (len(freq_in_list) > 0):
 		memory_list.append(freq_in_list)
-		memory_list.append(attenuation_list)
+		memory_list.append(gain_list)
 		memory_list.append(phase_difference_list)
 	FunctionClearCurrent()
-	
-	global is_running
-	is_running = False
-	button_update.configure(text="Start", command=FunctionUpdate, bg=color_start)
 
 def FunctionClearFormer():
 	global memory_list
@@ -256,12 +238,12 @@ def FunctionClearCurrent():
 	global freq_in_list
 	global voltage_in_list
 	global voltage_out_list
-	global attenuation_list
+	global gain_list
 	global phase_difference_list
 	freq_in_list = list()
 	voltage_in_list = list()
 	voltage_out_list = list()
-	attenuation_list = list()
+	gain_list = list()
 	phase_difference_list = list()
 
 def FunctionClearFigure():
@@ -271,24 +253,20 @@ def FunctionClearFigure():
 		FunctionDisplay()
 	else:
 		FunctionFinalizePlotLimits()
-	
-	#FunctionClearCurrent()
-	#FunctionInitBode()
-	#plot_canvas.draw()
 
 def FunctionInitBode():
-	subplot_attenuation.cla()
+	subplot_gain.cla()
 	subplot_phase.cla()
-	subplot_attenuation.set_title('Attenuation', fontdict={'fontsize':10})
-	subplot_attenuation.set_xlabel('f [Hz]')
-	subplot_attenuation.set_xscale('log')
-	subplot_attenuation.set_xlim(limits_frequency)
-	subplot_attenuation.set_ylabel(f'A{measurement_unit_attenuation}', labelpad=-10)
-	subplot_attenuation.xaxis.label.set_position((1, 0))
-	subplot_attenuation.set_ylim(limits_attenuation)
-	subplot_attenuation.yaxis.label.set_position((0, 1.05))
-	subplot_attenuation.yaxis.label.set_rotation(0)
-	subplot_attenuation.grid(which='both')
+	subplot_gain.set_title('Gain', fontdict={'fontsize':10})
+	subplot_gain.set_xlabel('f [Hz]')
+	subplot_gain.set_xscale('log')
+	subplot_gain.set_xlim(limits_frequency)
+	subplot_gain.set_ylabel(f'A{measurement_unit_gain}', labelpad=-10)
+	subplot_gain.xaxis.label.set_position((1, 0))
+	subplot_gain.set_ylim(limits_gain)
+	subplot_gain.yaxis.label.set_position((0, 1.05))
+	subplot_gain.yaxis.label.set_rotation(0)
+	subplot_gain.grid(which='both')
 	subplot_phase.set_title('Phase', fontdict={'fontsize':10})
 	subplot_phase.set_xlabel('f [Hz]')
 	subplot_phase.set_xscale('log')
@@ -304,8 +282,8 @@ def FunctionInitBode():
 
 def FunctionDisplay():
 	try:
-		limits_attenuation[0] = min(attenuation_list[-1], limits_attenuation[0])
-		limits_attenuation[1] = max(attenuation_list[-1] + 0.2 + int(attenuation_in_decibels.get()), limits_attenuation[1])
+		limits_gain[0] = min(gain_list[-1], limits_gain[0])
+		limits_gain[1] = max(gain_list[-1] + 0.2 + int(gain_in_decibels.get()), limits_gain[1])
 		limits_phase[0] = min(phase_difference_list[-1], limits_phase[0])
 		limits_phase[1] = max(phase_difference_list[-1], limits_phase[1])
 	
@@ -314,17 +292,17 @@ def FunctionDisplay():
 	FunctionInitBode()
 	if len(memory_list) > 0:
 		for i in range(int(len(memory_list) / 3)):
-			subplot_attenuation.plot(memory_list[i * 3], memory_list[i * 3 + 1])
+			subplot_gain.plot(memory_list[i * 3], memory_list[i * 3 + 1])
 			subplot_phase.plot(memory_list[i * 3], memory_list[i * 3 + 2])
-	subplot_attenuation.plot(freq_in_list, attenuation_list)
+	subplot_gain.plot(freq_in_list, gain_list)
 	subplot_phase.plot(freq_in_list, phase_difference_list)
 	plot_canvas.draw()
 
-def FunctionCalcAttenuation(attenuation):
-	if boolean_var_attenuation_in_db.get():
-		attenuation = 20 * math.log(attenuation, 10)
+def FunctionCalcGain(gain):
+	if boolean_var_gain_in_db.get():
+		gain = 20 * math.log(gain, 10)
 	
-	return attenuation
+	return gain
 
 def FunctionCalcPhaseDifference(phase):
 	if boolean_var_phase_in_radians.get():
@@ -332,35 +310,25 @@ def FunctionCalcPhaseDifference(phase):
 	
 	return phase
 
-def FunctionFrequencyChange(f, i, fg, scope, channel_in, channel_out):
+def FunctionFrequencyChange(f, i, fg, scope, channel_in, channel_out, avg):
 	global next_task
 	freq_in_list.append(f)
 	
-	print("Getting input voltage...")
 	scope.write(f'MEAS:ITEM? VPP,CHAN{channel_in}')
-	print("Input voltage ready")
 	main_window.after(100, QueryVoltageIn(scope))
-	print("Input voltage arrived")
-	print("Getting output voltage...")
 	scope.write(f'MEAS:ITEM? VPP,CHAN{channel_out}')
-	print("Output voltage ready")
 	main_window.after(100, QueryVoltageOut(scope))
-	print("Output voltage arrived")
-	attenuation = 1
+	gain = 1
 	try:
-		attenuation = voltage_out_list[-1] / voltage_in_list[-1]
+		gain = voltage_out_list[-1] / voltage_in_list[-1]
 	except:
-		if len(attenuation_list) > 0:
-			attenuation = attenuation_list[-1]
+		if len(gain_list) > 0:
+			gain = gain_list[-1]
 		else:
-			attenuation = 0
-	print(f"Attenuation: {attenuation}")
-	attenuation_list.append(FunctionCalcAttenuation(attenuation))
-	print("Getting phase...")
+			gain = 0.01
+	gain_list.append(FunctionCalcGain(gain))
 	scope.write('MEAS:ITEM? RPH')
-	print("Phase ready")
 	main_window.after(100, QueryPhaseDifference(scope))
-	print("Phase arrived")
 	
 	FunctionDisplay()
 	
@@ -368,23 +336,15 @@ def FunctionFrequencyChange(f, i, fg, scope, channel_in, channel_out):
 	if (i in range(0, len(freq_list))) and is_running:
 		fg.write(f'FREQ {freq_list[i]}')
 		UpdateScope(scope, voltage_in_list[-1], voltage_out_list[-1], channel_in, channel_out, f)
-		next_task = main_window.after(1000, FunctionFrequencyChange, freq_list[i], i, fg, scope, channel_in, channel_out)
+		next_task = main_window.after(FunctionCalculateDelay(1000, avg, freq_list[i]), FunctionFrequencyChange, freq_list[i], i, fg, scope, channel_in, channel_out, avg)
 	else:
-		if isNot33120A:
-			fg.write('OUTP OFF')
-		else:
-			fg.write('DISP:TEXT:CLE')
-			fg.write('SYST:LOC')
-		
-		fg.close()
-		scope.close()
-		FunctionFinalizePlotLimits()
+		FunctionStop()
 
 def FunctionExport():
 	if len(memory_list) == 0:
 		return
 	str_to_write = ""
-	measurement_units = [" [Hz]", measurement_unit_attenuation, measurement_unit_phase_difference]
+	measurement_units = [" [Hz]", measurement_unit_gain, measurement_unit_phase_difference]
 	for i in range(-3, 0):
 		str_to_write = str_to_write + measurement_units[i] + ", " + str(memory_list[i]) + "\r\n"
 	str_to_write = str_to_write.replace("[", "")
@@ -405,35 +365,35 @@ def FunctionImport():
 	imported_freq.pop(0)
 	temp = [float(f) for f in imported_freq]
 	imported_freq = temp
-	imported_attenuation = data[1].split(",")
-	imported_unit_attenuation = imported_attenuation.pop(0)
-	temp = [float(a) for a in imported_attenuation]
-	imported_attenuation = temp
+	imported_gain = data[1].split(",")
+	imported_unit_gain = imported_gain.pop(0)
+	temp = [float(a) for a in imported_gain]
+	imported_gain = temp
 	imported_phase = data[2].split(",")
 	imported_unit_phase = imported_phase.pop(0)
 	temp = [float(phi) for phi in imported_phase]
 	imported_phase = temp
-	if ((imported_unit_attenuation == "") and (measurement_unit_attenuation == " [dB]")) or ((imported_unit_attenuation == "dB") and (measurement_unit_attenuation == "")):
+	if ((imported_unit_gain == "") and (measurement_unit_gain == " [dB]")) or ((imported_unit_gain == "dB") and (measurement_unit_gain == "")):
 		checkbutton_db.invoke()
 	if ((imported_unit_phase == "rad") and (measurement_unit_phase_difference == " [°]")) or ((imported_unit_phase == "°") and (measurement_unit_phase_difference == " [rad]")):
 		checkbutton_rad.invoke()
 	global freq_in_list
-	global attenuation_list
+	global gain_list
 	global phase_difference_list
 	freq_in_list = imported_freq
-	attenuation_list = imported_attenuation
+	gain_list = imported_gain
 	phase_difference_list = imported_phase
-	if boolean_var_attenuation_in_db.get():
-		FunctionAttenuationLimitsdB()
+	if boolean_var_gain_in_db.get():
+		FunctionGainLimitsdB()
 	else:
-		FunctionAttenuationLimitsNodB()
+		FunctionGainLimitsNodB()
 	if boolean_var_phase_in_radians.get():
 		FunctionPhaseLimitsRad()
 	else:
 		FunctionPhaseLimitsDeg()
 	FunctionFinalizePlotLimits()
 
-def FunctionDemo(f, i):
+def FunctionDemo(f, i, avg):
 	global next_task
 	r = 330
 	c = 0.00000047
@@ -441,24 +401,20 @@ def FunctionDemo(f, i):
 	freq_in_list.append(f)
 	voltage_in_list.append(1)
 	voltage_out_list.append(voltage_out)
-	attenuation_list.append(FunctionCalcAttenuation(voltage_out))
+	gain_list.append(FunctionCalcGain(voltage_out))
 	phase_difference_list.append(FunctionCalcPhaseDifference(math.atan(-2 * math.pi * f * r * c) / math.pi * 180))
 	
 	FunctionDisplay()
 	
 	i = i + 1
 	if (i in range(0, len(freq_list))) and is_running:
-		next_task = main_window.after(500, FunctionDemo, freq_list[i], i)
+		next_task = main_window.after(FunctionCalculateDelay(1000, avg, freq_list[i]), FunctionDemo, freq_list[i], i, avg)
 	else:
-		FunctionFinalizePlotLimits()
+		FunctionStop()
 
 
 def QueryVoltageIn(scope):
-	print("before")
-	vin = scope.read()
-	print(f"Voltage read: {vin}")
-	voltage_in_list.append(float(vin))
-	print("after")
+	voltage_in_list.append(float(scope.read()))
 
 def QueryVoltageOut(scope):
 	voltage_out_list.append(float(scope.read()))
@@ -488,6 +444,7 @@ def FunctionFrequencySet(integers, points):
 	return result
 
 def SetupFG(fg, voltage_in):
+	global isNot33120A
 	fg.write('*IDN?')
 	if "33120" in fg.read():
 		isNot33120A = False
@@ -505,15 +462,11 @@ def SetupFG(fg, voltage_in):
 		fg.write(f'VOLT {voltage_in}')
 	fg.write('VOLT:OFFS 0')
 	fg.write('OUTP:LOAD INF')
-	subplot_attenuation.set_xlim(limits_frequency)
+	subplot_gain.set_xlim(limits_frequency)
 	subplot_phase.set_xlim(limits_frequency)
 	plot_canvas.draw()
 	if isNot33120A:
 		fg.write('OUTP ON')
-	else:
-		fg.write("SYST:REM")
-		fg.write("DISP:TEXT 'MEASURING..'")
-	print("FG initialized")
 
 def SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq, bw_in, bw_out, avg):
 	scope.write('CLE')
@@ -532,8 +485,8 @@ def SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq, bw
 	scope.write(f'CHAN{channel_out}:INV OFF')
 	scope.write(f'CHAN{channel_in}:OFFS 0')
 	scope.write(f'CHAN{channel_out}:OFFS 0')
-	scope.write(f'CHAN{channel_in}:PROB 1') #probe!
-	scope.write(f'CHAN{channel_out}:PROB 1') #probe!
+	scope.write(f'CHAN{channel_in}:PROB 1')
+	scope.write(f'CHAN{channel_out}:PROB 1')
 	scope.write(f'CHAN{channel_in}:UNIT VOLT')
 	scope.write(f'CHAN{channel_out}:UNIT VOLT')
 	scope.write('TIM:DEL:ENAB OFF')
@@ -555,21 +508,19 @@ def SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq, bw
 	scope.write('MEAS:CLE ALL')
 	scope.write(f'MEAS:CHAN {channel_in}')
 	scope.write(f'MEAS:CHAN {channel_out}')
-	scope.write(f'MEAS:SET:PSA CHAN{channel_in}')
-	scope.write(f'MEAS:SET:PSB CHAN{channel_out}')
+	scope.write(f'MEAS:SET:PSA CHAN{channel_out}')
+	scope.write(f'MEAS:SET:PSB CHAN{channel_in}')
 	scope.write(f'MEAS:ITEM VPP,CHAN{channel_in}')
 	scope.write(f'MEAS:ITEM VPP,CHAN{channel_out}')
-	scope.write(f'MEAS:ITEM FREQ,CHAN{channel_in}') #I mean... it can be done
+	scope.write(f'MEAS:ITEM FREQ,CHAN{channel_in}')
 	scope.write(f'MEAS:ITEM FREQ,CHAN{channel_out}')
 	scope.write('MEAS:ITEM RPH')
 	UpdateScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq)
-	print("SCOPE initialized")
 
 def UpdateScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq):
 	scope.write(f'TIM:MAIN:SCAL {1/freq/6}')
 	scope.write(f'CHAN{channel_in}:RANG {voltage_in * 2}')
 	scope.write(f'CHAN{channel_out}:RANG {voltage_out * 2}')
-	print("SCOPE updated")
 
 def FunctionDisplayScale(val):
 	global label_average2
@@ -580,14 +531,30 @@ def FunctionDisplayScale(val):
 	label_average2.config(text=label_text)
 
 def FunctionStop():
+	global is_running
+	try:
+		fg.write('OUTP OFF')
+		fg.close()
+	except:
+		pass
+	try:
+		scope.close()
+	except:
+		pass
 	is_running = False
+	button_update.configure(text="Start", command=FunctionUpdate, bg=color_start)
+
 	try:
         	main_window.after_cancel(next_task)
 	except:
 		pass
 	FunctionFinalizePlotLimits()
 
+def FunctionCalculateDelay(ideal, avg, freq):
+	return int(max(2000/freq*avg, ideal))
+
 def FunctionUpdate():
+	avg = 2 ** int(float(scale_average.get()))
 	channel_in = combobox_channel_in.get()
 	channel_out = combobox_channel_out.get()
 	
@@ -619,7 +586,7 @@ def FunctionUpdate():
 		else:
 			nc_fg = False
 	
-	dict_unit_frequency = {"μHz" : 0.000001, "mHz" : 0.001, "Hz" : 1, "kHz" : 1000, "MHz" : 1000000, "GHz" : 1000000000}
+	dict_unit_frequency = {"mHz" : 0.001, "Hz" : 1, "kHz" : 1000, "MHz" : 1000000}
 	setting_min = float(entry_frequency_min.get()) * dict_unit_frequency[combobox_unit_frequency_min.get()]
 	memory_min = setting_min
 	setting_max = float(entry_frequency_max.get()) * dict_unit_frequency[combobox_unit_frequency_max.get()]
@@ -632,14 +599,11 @@ def FunctionUpdate():
 	limits_frequency[1] = memory_max
 	points = int(entry_points.get())
 	
-	dict_unit_voltage = {"μV" : 0.000001, "mV" : 0.001, "V" : 1, "kV" : 1000, "MV" : 1000000, "GV" : 1000000000}
+	dict_unit_voltage = {"mV" : 0.001, "V" : 1, "kV" : 1000}
 	voltage_in = float(entry_voltage.get()) * dict_unit_voltage[combobox_unit_voltage.get()]
 	voltage_out = voltage_in
 	
-	if limits_frequency[0] == 0 or limits_frequency[1] == 0:
-		tkinter.messagebox.showerror(title="Error", message="None of the limits can be 0.")
-		return
-	elif limits_frequency[0] == limits_frequency[1]:
+	if limits_frequency[0] == limits_frequency[1]:
 		tkinter.messagebox.showerror(title="Error", message="Lower and upper limit cannot be equal!")
 		return
 	elif points == 0:
@@ -649,20 +613,26 @@ def FunctionUpdate():
 		temp = limits_frequency[0]
 		limits_frequency[0] = limits_frequency[1]
 		limits_frequency[1] = temp
+		entry_frequency_min.delete(0, END)
+		entry_frequency_min.insert(END, f"{limits_frequency[0]}")
+		combobox_unit_frequency_min.set("Hz")
+		entry_frequency_max.delete(0, END)
+		entry_frequency_max.insert(END, f"{limits_frequency[1]}")
+		combobox_unit_frequency_max.set("Hz")
 	
-	if limits_frequency[0] < 0.000001:
-		tkinter.messagebox.showwarning(title="Warning", message="The specified minimum was too small, so it was replaced with 1 μHz.")
-		limits_frequency[0] = 0.000001
+	if limits_frequency[0] < 1:
+		tkinter.messagebox.showwarning(title="Warning", message="The specified minimum was too small, so it was replaced with 1 Hz.")
+		limits_frequency[0] = 1
 		entry_frequency_min.delete(0, END)
 		entry_frequency_min.insert(END, "1")
-		combobox_unit_frequency_min.set("μHz")
+		combobox_unit_frequency_min.set("Hz")
 	
-	if limits_frequency[1] > 1000000000:
-		tkinter.messagebox.showwarning(title="Warning", message="The specified maximum was too high, so it was replaced with 1 GHz.")
-		limits_frequency[1] = 1000000000
+	if limits_frequency[1] > 20000000:
+		tkinter.messagebox.showwarning(title="Warning", message="The specified maximum was too high, so it was replaced with 20 MHz.")
+		limits_frequency[1] = 20000000
 		entry_frequency_max.delete(0, END)
-		entry_frequency_max.insert(END, "1")
-		combobox_unit_frequency_max.set("GHz")
+		entry_frequency_max.insert(END, "20")
+		combobox_unit_frequency_max.set("MHz")
 	
 	button_update.configure(text="Stop", command=FunctionStop, bg="red")
 	global is_running
@@ -702,24 +672,15 @@ def FunctionUpdate():
 		for i in range(0, len(freq_list)):
 			freq_list[i] = round(freq_list[i] / 10, 10)
 		tens = tens - 1
-
+	
 	if nc_fg or nc_scope:
-		next_task = main_window.after(500, FunctionDemo, freq_list[0], 0)
+		next_task = main_window.after(FunctionCalculateDelay(1000, avg, freq_list[0]), FunctionDemo, freq_list[0], 0, avg)
 	else:
 		dict_bool_to_on_off = {False: "OFF", True: "ON"}
 		SetupFG(fg, voltage_in)
-		SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq_list[0], dict_bool_to_on_off[boolean_var_bw_in.get()], dict_bool_to_on_off[boolean_var_bw_out.get()], 2 ** int(float(scale_average.get())))
+		SetupScope(scope, voltage_in, voltage_out, channel_in, channel_out, freq_list[0], dict_bool_to_on_off[boolean_var_bw_in.get()], dict_bool_to_on_off[boolean_var_bw_out.get()], avg)
 		
-		next_task = main_window.after(20000, FunctionFrequencyChange, freq_list[0], 0, fg, scope, channel_in, channel_out)
-	#inst.write(f'FREQ {frequency}')
-	#print(myId)
-	#Function Generator: RIGOL TECHNOLOGIES,DG1022 ,DG1D172101869,03.03.00.13.00.03.01
-	#Scope: RIGOL TECHNOLOGIES,DS1054Z,DS1ZA192611866,00.04.04.SP3
-	#inst.write(f'RUN')
-
-
-	#inst.write(f'VOLT {voltage}')
-	#inst.write(f'OUTP ON')
+		next_task = main_window.after(FunctionCalculateDelay(15000, avg, freq_list[0]), FunctionFrequencyChange, freq_list[0], 0, fg, scope, channel_in, channel_out, avg)
 
 pane_main = PanedWindow(main_window)
 pane_main.pack(fill=BOTH,expand=1)
@@ -727,17 +688,19 @@ pane_side = PanedWindow(pane_main,orient=VERTICAL)
 pane_main.add(pane_side)
 frame_device = Frame(pane_side)
 pane_side.add(frame_device)
+frame_device.pack(pady=10)
 frame_measurement = Frame(pane_side)
 pane_side.add(frame_measurement)
+frame_measurement.pack(pady=10)
 frame_data = Frame(pane_side)
 pane_side.add(frame_data)
+frame_data.pack(pady=10)
 frame_plot = Frame(pane_main)
 pane_main.add(frame_plot)
 
 figure_bode = Figure(figsize=(5,6), dpi=100)
-#figure_bode.suptitle('Bode plot', fontsize=12)
 figure_bode.subplots_adjust(hspace=0.5)
-subplot_attenuation = figure_bode.add_subplot(211)
+subplot_gain = figure_bode.add_subplot(211)
 subplot_phase = figure_bode.add_subplot(212)
 FunctionInitBode()
 plot_canvas = FigureCanvasTkAgg(figure_bode, master=frame_plot)
@@ -750,10 +713,10 @@ plot_toolbar.update()
 label_setup = Label(frame_device, text="Measurement setup", font=("Helvetica", 20))
 
 label_fg = Label(frame_device, text="Function generator:", width=17, anchor="w")
-combobox_fg = ttk.Combobox(frame_device, state="readonly", values=device_list)
+combobox_fg = ttk.Combobox(frame_device, state="readonly", width=25, values=device_list)
 
 label_scope = Label(frame_device, text="Oscilloscope:", width=17, anchor="w")
-combobox_scope = ttk.Combobox(frame_device, state="readonly", values=device_list)
+combobox_scope = ttk.Combobox(frame_device, state="readonly", width=25, values=device_list)
 
 ListResources()
 
@@ -767,41 +730,41 @@ combobox_channel_out.config(width=1)
 combobox_channel_out.set(2)
 boolean_var_bw_in = BooleanVar()
 boolean_var_bw_in.set(False)
-checkbutton_bw_in = Checkbutton(frame_device, variable=boolean_var_bw_in, text="Oscilloscope bandwidth limit (input)")
+checkbutton_bw_in = Checkbutton(frame_device, variable=boolean_var_bw_in, text="Oscilloscope bandwidth limit (input)", anchor="w")
 boolean_var_bw_out = BooleanVar()
 boolean_var_bw_out.set(False)
-checkbutton_bw_out = Checkbutton(frame_device, variable=boolean_var_bw_out, text="Oscilloscope bandwidth limit (output)")
+checkbutton_bw_out = Checkbutton(frame_device, variable=boolean_var_bw_out, text="Oscilloscope bandwidth limit (output)", anchor="w")
 int_var_average = IntVar()
 label_average1 = Label(frame_device, text="Taking average of")
-label_average2 = Label(frame_device, text="0 samples", width=12)
+label_average2 = Label(frame_device, text="no averaging", width=12, anchor="w")
 scale_average = ttk.Scale(frame_device, orient=HORIZONTAL, length=100, from_=0, to=10, variable=int_var_average, command=FunctionDisplayScale)
 scale_average.set(0)
 
-button_refresh = Button(frame_device, text="bruh", width=8, command=ListResources)
+button_refresh = Button(frame_device, text="Refresh", command=ListResources)
 
-frame_device.grid_rowconfigure((0, 10, 15, 17, 20, 30, 40, 50, 60), weight=1)
-frame_device.grid_columnconfigure((0, 10, 20, 25), weight=1)
+#frame_device.grid_rowconfigure((0, 10, 15, 17, 20, 30, 40, 50, 60), weight=1)
+#frame_device.grid_columnconfigure((0, 10, 20, 25), weight=1)
 
 label_setup.grid(row=0, column=0, columnspan=30, pady=20, sticky=EW)
 
-label_fg.grid(row=10, column=0, padx=20, sticky=E)
+label_fg.grid(row=10, column=0, padx=5, sticky=E)
 combobox_fg.grid(row=10, column=10, columnspan=20, sticky=W)
 
-label_scope.grid(row=15, column=0, padx=20, sticky=E)
+label_scope.grid(row=15, column=0, padx=5, sticky=E)
 combobox_scope.grid(row=15, column=10, columnspan=20, sticky=W)
 
-checkbutton_bw_in.grid(row=40, column=0, columnspan=30, sticky=EW)
-checkbutton_bw_out.grid(row=50, column=0, columnspan=30, sticky=EW)
-label_average1.grid(row=60, column=0, padx=10, sticky=E)
-scale_average.grid(row=60, column=10, sticky=EW)
-label_average2.grid(row=60, column=20, columnspan=10, padx=10, sticky=W)
+checkbutton_bw_in.grid(row=40, column=0, padx=5, columnspan=30, sticky=EW)
+checkbutton_bw_out.grid(row=50, column=0, padx=5, columnspan=30, sticky=EW)
+label_average1.grid(row=60, column=0, padx=5, sticky=E)
+scale_average.grid(row=60, column=10, padx=5, sticky=EW)
+label_average2.grid(row=60, column=20, columnspan=10, padx=5, sticky=W)
 
-button_refresh.grid(row=17, column=0, pady=5, sticky=EW)
+button_refresh.grid(row=17, column=10, columnspan=20, pady=5, sticky=EW)
 
-label_channel_in.grid(row=20, column=0, columnspan=25, padx=10, sticky=E)
-combobox_channel_in.grid(row=20, column=25, sticky=W)
-label_channel_out.grid(row=30, column=0, columnspan=25, padx=10, sticky=E)
-combobox_channel_out.grid(row=30, column=25, sticky=W)
+label_channel_in.grid(row=20, column=0, columnspan=25, padx=5, sticky=W)
+combobox_channel_in.grid(row=20, column=25, sticky=E)
+label_channel_out.grid(row=30, column=0, columnspan=25, padx=5, sticky=W)
+combobox_channel_out.grid(row=30, column=25, sticky=E)
 
 
 button_update=Button(frame_measurement, text="Start", command=FunctionUpdate)
@@ -809,7 +772,7 @@ button_update.config(width=10)
 color_start = button_update.cget("background")
 
 label_frequency=Label(frame_measurement, text="Frequency:")
-set_of_frequency_measurement_units = ["μHz", "mHz", "Hz", "kHz", "MHz", "GHz"]
+set_of_frequency_measurement_units = ["Hz", "kHz", "MHz"]
 entry_frequency_min=Entry(frame_measurement)
 entry_frequency_min.config(width=5)
 entry_frequency_min.insert(END, "20")
@@ -828,7 +791,7 @@ label_voltage=Label(frame_measurement, text="Voltage:")
 entry_voltage=Entry(frame_measurement)
 entry_voltage.config(width=5)
 entry_voltage.insert(END, "1")
-set_of_voltage_measurement_units = ["μV", "mV", "V"]
+set_of_voltage_measurement_units = ["V"]
 combobox_unit_voltage = ttk.Combobox(frame_measurement, state="readonly", values=set_of_voltage_measurement_units)
 combobox_unit_voltage.set("V")
 combobox_unit_voltage.config(width=4)
@@ -859,7 +822,7 @@ entry_voltage.grid(row=20, column=10)
 combobox_unit_voltage.grid(row=20, column=20)
 
 
-checkbutton_db = Checkbutton(frame_data, variable=boolean_var_attenuation_in_db, text="Attenuation in decibels", command=FunctionUpdateAttenuation)
+checkbutton_db = Checkbutton(frame_data, variable=boolean_var_gain_in_db, text="Gain in decibels", command=FunctionUpdateGain)
 checkbutton_rad = Checkbutton(frame_data, variable=boolean_var_phase_in_radians, text="Phase difference in radians", command=FunctionUpdatePhaseDifference)
 button_clear = Button(frame_data, text="Clear previous figures", command=FunctionClearFigure)
 
@@ -869,10 +832,9 @@ button_import = Button(frame_data, text="Import .csv", command=FunctionImport)
 
 checkbutton_db.pack()
 checkbutton_rad.pack()
-button_clear.pack()
-button_export.pack()
-button_import.pack()
+button_clear.pack(pady=10)
+button_import.pack(fill="both", side=LEFT)
+button_export.pack(fill="both", side=RIGHT)
 
-# main_window.protocol(’WM_DELETE_WINDOW’,fgv)
 
 main_window.mainloop()
